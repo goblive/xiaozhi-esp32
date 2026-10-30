@@ -679,6 +679,9 @@ choice BOARD_TYPE
     config BOARD_TYPE_ZHENGCHEN_CAM
         bool "Zhengchen AI Camera Wi-Fi (征辰科技)"
         depends on IDF_TARGET_ESP32S3
+    config BOARD_TYPE_ESP32C3_SUPERMINI
+        bool "ESP32-C3 SuperMini (INMP441 + MAX98357)"
+        depends on IDF_TARGET_ESP32C3
 endchoice
 
 config RESPEAKER_I2S_EXTERNAL_CLOCK_48K

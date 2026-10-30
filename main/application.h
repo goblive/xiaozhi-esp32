@@ -95,6 +95,8 @@ public:
      * Sends MAIN_EVENT_TOGGLE_CHAT to be handled in Run()
      */
     void ToggleChatState();
+    // 待命时开始聊天，聊天中回到待命。不会进入配网。
+    void ToggleStandby();
 
     /**
      * Start listening (event-based, thread-safe)
@@ -109,6 +111,8 @@ public:
     void StopListening();
 
     void Reboot();
+    // 串口文字模拟提问（走 listen detect，宜短句）。回答结束后回到待命，不打开麦克风。
+    void SubmitTextQuery(const std::string& text);
     void WakeWordInvoke(const std::string& wake_word);
     bool UpgradeFirmware(const std::string& url, const std::string& version = "");
     bool CanEnterSleepMode();

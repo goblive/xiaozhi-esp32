@@ -762,6 +762,9 @@ void Application::ShowActivationCode(const std::string& code, const std::string&
          digit_sound{'6', Lang::Sounds::OGG_6}, digit_sound{'7', Lang::Sounds::OGG_7},
          digit_sound{'8', Lang::Sounds::OGG_8}, digit_sound{'9', Lang::Sounds::OGG_9}}};
 
+    // 无屏幕时串口要能直接看到验证码。数字本身不会出现在服务器提示语里。
+    ESP_LOGI(TAG, "验证码: %s", code.c_str());
+
     // This sentence uses 9KB of SRAM, so we need to wait for it to finish
     Alert(Lang::Strings::ACTIVATION, message.c_str(), "link", Lang::Sounds::OGG_ACTIVATION);
 
@@ -797,6 +800,29 @@ void Application::DismissAlert() {
 }
 
 void Application::ToggleChatState() { xEventGroupSetBits(event_group_, MAIN_EVENT_TOGGLE_CHAT); }
+
+void Application::ToggleStandby() {
+    Schedule([this]() {
+        if (!protocol_) {
+            ESP_LOGE(TAG, "Protocol not initialized");
+            return;
+        }
+        auto state = GetDeviceState();
+        if (state == kDeviceStateIdle) {
+            ToggleChatState();
+            return;
+        }
+        if (state != kDeviceStateListening && state != kDeviceStateSpeaking) {
+            return;
+        }
+        // 回答结束后回到待命，不再继续听周围的人说话。
+        listening_mode_ = kListeningModeManualStop;
+        if (state == kDeviceStateSpeaking) {
+            AbortSpeaking(kAbortReasonNone);
+        }
+        protocol_->CloseAudioChannel();
+    });
+}
 
 void Application::StartListening() { xEventGroupSetBits(event_group_, MAIN_EVENT_START_LISTENING); }
 
@@ -1355,6 +1381,57 @@ bool Application::UpgradeFirmware(const std::string& url, const std::string& ver
         Reboot();
         return true;
     }
+}
+
+void Application::SubmitTextQuery(const std::string& text) {
+    std::string query;
+    query.reserve(text.size());
+    for (unsigned char ch : text) {
+        if (ch == '\r' || ch == '\n') {
+            continue;
+        }
+        if (ch == '\\' || ch == '"') {
+            query.push_back('\\');
+        }
+        query.push_back(static_cast<char>(ch));
+    }
+    if (query.empty()) {
+        return;
+    }
+
+    Schedule([this, query]() {
+        if (!protocol_) {
+            ESP_LOGW(TAG, "还没连上服务器，等出现「待命」后再发");
+            return;
+        }
+        if (GetDeviceState() != kDeviceStateIdle) {
+            ESP_LOGW(TAG, "设备忙，等回到待命后再发: %s", query.c_str());
+            return;
+        }
+
+        ESP_LOGI(TAG, ">> %s", query.c_str());
+        if (!SetDeviceState(kDeviceStateConnecting)) {
+            return;
+        }
+
+        // 等状态切换处理完再阻塞式开通道，避免 UI 卡住。
+        Schedule([this, query]() {
+            if (GetDeviceState() != kDeviceStateConnecting) {
+                return;
+            }
+            auto& board = Board::GetInstance();
+            board.SetPowerSaveLevel(PowerSaveLevel::PERFORMANCE);
+            if (!protocol_->IsAudioChannelOpened() && !protocol_->OpenAudioChannel()) {
+                SetDeviceState(kDeviceStateIdle);
+                return;
+            }
+
+            // 只把文字交给服务器。回答结束后回到待命，不打开麦克风。
+            listening_mode_ = kListeningModeManualStop;
+            protocol_->SendWakeWordDetected(query);
+            SetDeviceState(kDeviceStateIdle);
+        });
+    });
 }
 
 void Application::WakeWordInvoke(const std::string& wake_word) {

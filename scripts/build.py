@@ -1449,6 +1449,7 @@ def _configure_build(
         f"-DIDF_TARGET={target}",
         f"-DSDKCONFIG_DEFAULTS={';'.join(defaults)}",
         f"-DBOARD_NAME={board_name}",
+        "-DCMAKE_NINJA_FORCE_RESPONSE_FILE=ON",
         "reconfigure",
         preview=preview,
     )
